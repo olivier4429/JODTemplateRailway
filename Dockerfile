@@ -13,7 +13,14 @@ FROM ghcr.io/jodconverter/jodconverter-examples:${JODCONVERTER_IMAGE_TAG}
 # Sensible defaults; all of these can be overridden as Railway service
 # variables without rebuilding the image (Spring Boot relaxed binding
 # maps SCREAMING_SNAKE_CASE env vars to their dotted property names).
-ENV SERVER_PORT=8080 \
+#
+# PORT is Railway's own convention: its healthcheck/proxy subsystem needs
+# an explicit PORT value to know which port to talk to and does NOT infer
+# it from this file's EXPOSE instruction. Baking a default here means the
+# template works out of the box; it can still be overridden from the
+# Railway dashboard (Variables tab) if needed.
+ENV PORT=8080 \
+    SERVER_PORT=8080 \
     JODCONVERTER_LOCAL_PORT_NUMBERS=2002,2003 \
     JODCONVERTER_LOCAL_WORKING_DIR=/tmp \
     SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE=20MB \

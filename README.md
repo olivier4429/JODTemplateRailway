@@ -78,8 +78,8 @@ curl -F "data=@sample.docx" http://localhost:8080/lool/convert-to/pdf -o sample.
 - Endpoint: `POST /lool/convert-to/{format}` (or `POST /lool/convert-to?format=pdf`)
 - Required multipart field: `data` (the file to convert)
 - Response: the converted file as binary (`application/octet-stream`)
-- Interactive docs: `GET /swagger-ui/index.html`
-- Raw OpenAPI spec: `GET /v3/api-docs` (used as the healthcheck endpoint)
+- Interactive docs: `GET /swagger-ui/index.html` (used as the healthcheck endpoint — it's a static asset, so it can't be broken by an OpenAPI schema-generation quirk)
+- Raw OpenAPI spec: `GET /v3/api-docs`
 
 ## 2. Deploy this project on Railway
 
@@ -133,7 +133,7 @@ rebuilding the image, by setting it as a service variable in Railway's
 
 | Variable | Default (Dockerfile) | Purpose |
 |---|---|---|
-| `PORT` | provided by Railway | Public port Railway expects; automatically translated into `SERVER_PORT` |
+| `PORT` | `8080` | Railway's own convention: the port its proxy **and healthcheck system** target. Railway does not infer this from the Dockerfile's `EXPOSE`, so it's baked in here as a default — automatically translated into `SERVER_PORT` for Spring Boot by `railway-entrypoint.sh`. Override it in the Variables tab only if you know Railway assigned a different one for your plan/region. |
 | `JODCONVERTER_LOCAL_PORT_NUMBERS` | `2002,2003` | List of internal LibreOffice ports = number of parallel conversion instances |
 | `JODCONVERTER_LOCAL_WORKING_DIR` | `/tmp` | Temporary working directory for conversions |
 | `SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE` | `20MB` | Max size of an uploaded file |
@@ -169,7 +169,7 @@ from step 2.
 3. In the template editor, for the JODConverter service:
    - **Variables**: expose the ones from the table above with sensible
      defaults, so template users can tweak them without reading the code.
-   - **Settings → Healthcheck Path**: `/v3/api-docs` (matches
+   - **Settings → Healthcheck Path**: `/swagger-ui/index.html` (matches
      `railway.json`).
    - **Settings → Public Networking**: enable it if you want the template
      to expose an HTTP URL directly.
@@ -182,10 +182,22 @@ from step 2.
 
 ## Troubleshooting
 
-- **Healthcheck keeps failing**: the service takes longer than
-  `healthcheckTimeout` to start (often on a CPU-constrained plan during the
-  first LibreOffice startup). Increase `healthcheckTimeout` in
-  `railway.json`.
+- **Healthcheck fails with "service unavailable" on every attempt, for the
+  full retry window, even though the deploy logs show Spring Boot/Tomcat
+  started fine within a few seconds**: this is not a slow-startup problem —
+  it means Railway's healthcheck subsystem doesn't know which port to call.
+  Railway reads the `PORT` env var to route both its proxy *and* its
+  healthchecks; it does **not** derive it from the Dockerfile's `EXPOSE`
+  instruction. This template now bakes `ENV PORT=8080` into the Dockerfile
+  as a safe default, but if you still hit this, explicitly add a `PORT`
+  service variable (Settings → Variables) set to `8080` (or whatever value
+  matches your `SERVER_PORT`/`EXPOSE`). See
+  [Railway — Healthchecks](https://docs.railway.com/deployments/healthchecks)
+  and this [reported case](https://station.railway.com/questions/healthcheck-service-unavailable-but-en-b056fa2c)
+  with the same symptom.
+- **Healthcheck genuinely times out because the app is still starting**: on
+  a CPU-constrained plan the first LibreOffice startup can take longer.
+  Increase `healthcheckTimeout` in `railway.json`.
 - **`OutOfMemoryError` / container restarting in a loop**: the Railway plan
   doesn't have enough RAM for the configured number of LibreOffice
   instances. Reduce `JODCONVERTER_LOCAL_PORT_NUMBERS` to a single value
