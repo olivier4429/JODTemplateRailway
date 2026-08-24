@@ -1,0 +1,20 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background badge -->
+  <rect width="512" height="512" rx="96" fill="#4F46E5"/>
+
+  <!-- Source document (left) -->
+  <rect x="90" y="150" width="150" height="200" rx="14" fill="#FFFFFF"/>
+  <rect x="112" y="190" width="90" height="12" rx="6" fill="#4F46E5" opacity="0.45"/>
+  <rect x="112" y="220" width="70" height="12" rx="6" fill="#4F46E5" opacity="0.45"/>
+  <rect x="112" y="250" width="50" height="12" rx="6" fill="#4F46E5" opacity="0.45"/>
+
+  <!-- Conversion arrow -->
+  <path d="M226,243 L240,243 L240,235 L266,250 L240,265 L240,257 L226,257 Z" fill="#FFFFFF"/>
+
+  <!-- Target document (right), amber folded corner marks it as the converted output -->
+  <rect x="272" y="150" width="150" height="200" rx="14" fill="#FFFFFF"/>
+  <path d="M382,150 L422,150 L422,190 Z" fill="#F59E0B"/>
+  <rect x="294" y="190" width="90" height="12" rx="6" fill="#4F46E5" opacity="0.45"/>
+  <rect x="294" y="220" width="70" height="12" rx="6" fill="#4F46E5" opacity="0.45"/>
+  <rect x="294" y="250" width="50" height="12" rx="6" fill="#4F46E5" opacity="0.45"/>
+</svg>

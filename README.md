@@ -37,6 +37,9 @@ Repository layout:
 ├── scripts/
 │   ├── test-convert.sh     # quick bash/curl smoke test
 │   └── test-convert.ps1    # quick PowerShell smoke test
+├── documentation/
+│   ├── icon.svg              # marketplace template icon
+│   └── template-metadata.md  # name/description/category to paste when publishing
 └── README.md
 ```
 
