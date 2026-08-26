@@ -44,7 +44,9 @@ Repository layout:
 ├── .gitattributes          # forces LF endings on scripts/configs copied into the Linux image
 ├── scripts/
 │   ├── test-convert.sh     # quick bash/curl smoke test (optionally sends an API key)
-│   └── test-convert.ps1    # quick PowerShell smoke test (optionally sends an API key)
+│   ├── test-convert.ps1    # quick PowerShell smoke test (optionally sends an API key)
+│   ├── test-api-keys.sh    # full API_KEYS access-control test matrix (bash/curl)
+│   └── test-api-keys.ps1   # full API_KEYS access-control test matrix (PowerShell)
 ├── documentation/
 │   ├── icon.svg              # marketplace template icon
 │   └── template-metadata.md  # name/description/category to paste when publishing
@@ -202,6 +204,27 @@ extra defense in depth:
 - **Public use**: additionally put the service behind your own API
   gateway or application backend if you need per-caller rate limiting,
   usage tracking, or key rotation without redeploying.
+
+### Testing the gate
+
+`scripts/test-api-keys.sh` / `.ps1` build the image and exercise the full
+access-control matrix against two throwaway containers (one with
+`API_KEYS` unset, one with `API_KEYS=key-a,key-b`), printing a PASS/FAIL
+per case:
+
+```bash
+./scripts/test-api-keys.sh
+```
+
+```powershell
+.\scripts\test-api-keys.ps1
+```
+
+Cases covered: unrestricted access when `API_KEYS` is unset (even with a
+garbage key supplied); `401` with no key and with a wrong key once
+`API_KEYS` is set; `200` with each configured key via both the header and
+the query parameter; and `/swagger-ui/*` + `/v3/api-docs` staying open in
+both cases.
 
 ## 5. Turning this project into a reusable Railway Template
 
