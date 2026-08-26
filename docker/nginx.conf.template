@@ -1,0 +1,60 @@
+# Rendered into /etc/nginx/nginx.conf by railway-entrypoint.sh (via envsubst)
+# on every container start. Only ${LISTEN_PORT}, ${BACKEND_PORT} and
+# ${NGINX_CLIENT_MAX_BODY_SIZE} are substituted -- every other $variable
+# below (e.g. $http_x_api_key, $host) is nginx's own and is left alone.
+worker_processes auto;
+pid /run/nginx.pid;
+error_log /dev/stderr warn;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+    access_log    /dev/stdout;
+    sendfile      on;
+    client_max_body_size ${NGINX_CLIENT_MAX_BODY_SIZE};
+
+    # Populated by railway-entrypoint.sh from the API_KEYS env var: one
+    # `"key" 1;` line per configured key, into /etc/nginx/conf.d/api_keys.map.
+    # A caller is let through if EITHER the X-Api-Key header or the apiKey
+    # query parameter matches one of those keys.
+    map $http_x_api_key $api_key_valid_header {
+        default 0;
+        include /etc/nginx/conf.d/api_keys.map;
+    }
+    map $arg_apiKey $api_key_valid_query {
+        default 0;
+        include /etc/nginx/conf.d/api_keys.map;
+    }
+    map "$api_key_valid_header:$api_key_valid_query" $api_key_ok {
+        default 0;
+        "~1" 1;
+    }
+
+    server {
+        listen ${LISTEN_PORT};
+        server_name _;
+
+        # Always left reachable without a key, even when API_KEYS is set:
+        # keeps Swagger UI browsable, and is what lets Railway's own
+        # healthcheck (GET /swagger-ui/index.html, see railway.json) keep
+        # working no matter how API_KEYS is configured.
+        location ~ ^/(swagger-ui/|v3/api-docs) {
+            proxy_pass http://127.0.0.1:${BACKEND_PORT};
+            include /etc/nginx/conf.d/proxy_common.conf;
+        }
+
+        location / {
+            # Written by railway-entrypoint.sh: empty when API_KEYS is
+            # unset/empty (unrestricted, the template's default), otherwise
+            # a `return 401` guard for requests without a valid key.
+            include /etc/nginx/conf.d/auth.conf;
+
+            proxy_pass http://127.0.0.1:${BACKEND_PORT};
+            include /etc/nginx/conf.d/proxy_common.conf;
+        }
+    }
+}

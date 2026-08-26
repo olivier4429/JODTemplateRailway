@@ -54,17 +54,21 @@ image (LibreOffice + the JODConverter Spring Boot REST sample) with the
 glue needed to run cleanly on Railway: dynamic port binding and sane
 default resource settings.
 
-## ⚠️ No built-in authentication
+## 🔑 Optional API-key protection
 
-The conversion endpoint has **no authentication by default** — anyone with
-the URL can submit documents for conversion. If you expose this publicly,
-put it behind an API-key gateway or keep it on Railway's private network
-and call it only from your other services.
+By default, the conversion endpoint has **no authentication** — anyone
+with the URL can submit documents for conversion. Set the `API_KEYS`
+variable to a comma-separated list of keys to require one of them (as an
+`X-Api-Key` header or an `apiKey` query parameter) on every request; leave
+it empty to keep the service open. Either way, consider keeping it on
+Railway's private network and calling it only from your other services if
+it doesn't need to be public.
 
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `API_KEYS` | *(empty)* | Comma-separated API keys allowed to call the conversion API; empty = unrestricted |
 | `JODCONVERTER_LOCAL_PORT_NUMBERS` | `2002,2003` | Number of parallel LibreOffice conversion instances |
 | `SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE` | `20MB` | Max uploaded file size |
 | `SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE` | `20MB` | Max multipart request size |

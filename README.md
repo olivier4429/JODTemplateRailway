@@ -21,22 +21,30 @@ which bundles:
   repository
 - A built-in Swagger UI
 
-The only thing this repo adds is a **Dockerfile** wrapping that image with a
-small entrypoint script that wires up the dynamic `$PORT` Railway provides at
-runtime (Spring Boot listens on `server.port`, which needs to match whatever
-port Railway expects).
+On top of that image, this repo adds a **Dockerfile** that puts an `nginx`
+reverse proxy in front of the app. That proxy does two things:
+
+- wires up the dynamic `$PORT` Railway provides at runtime (nginx binds
+  `$PORT`; the Spring Boot app itself always listens on a fixed internal
+  port, see [Environment variables](#3-environment-variables));
+- optionally gates every conversion call behind one of a list of API keys
+  (see [Securing access](#4-securing-access-recommended)).
 
 Repository layout:
 
 ```
 .
-├── Dockerfile              # builds on the official jodconverter image, wires up $PORT
-├── railway-entrypoint.sh   # translates $PORT -> SERVER_PORT before starting the app
+├── Dockerfile              # builds on the official jodconverter image, adds the nginx proxy
+├── railway-entrypoint.sh   # renders nginx.conf, starts the app + nginx side by side
+├── docker/
+│   ├── nginx.conf.template   # nginx config template (rendered at container start)
+│   └── proxy_common.conf     # shared proxy_pass settings, included from the template
 ├── railway.json            # Railway config (Dockerfile builder, healthcheck, restart policy)
 ├── .dockerignore
+├── .gitattributes          # forces LF endings on scripts/configs copied into the Linux image
 ├── scripts/
-│   ├── test-convert.sh     # quick bash/curl smoke test
-│   └── test-convert.ps1    # quick PowerShell smoke test
+│   ├── test-convert.sh     # quick bash/curl smoke test (optionally sends an API key)
+│   └── test-convert.ps1    # quick PowerShell smoke test (optionally sends an API key)
 ├── documentation/
 │   ├── icon.svg              # marketplace template icon
 │   └── template-metadata.md  # name/description/category to paste when publishing
@@ -71,6 +79,10 @@ On bash/WSL/macOS/Linux:
 ```bash
 ./scripts/test-convert.sh http://localhost:8080 ./sample.docx pdf
 ```
+
+> To try the [API key gate](#4-securing-access-recommended) locally, run
+> with `-e API_KEYS=test-key` and pass `-ApiKey test-key` /
+> `test-key` as the scripts' extra argument.
 
 ### Calling the API directly
 
@@ -136,7 +148,10 @@ rebuilding the image, by setting it as a service variable in Railway's
 
 | Variable | Default (Dockerfile) | Purpose |
 |---|---|---|
-| `PORT` | `8080` | Railway's own convention: the port its proxy **and healthcheck system** target. Railway does not infer this from the Dockerfile's `EXPOSE`, so it's baked in here as a default — automatically translated into `SERVER_PORT` for Spring Boot by `railway-entrypoint.sh`. Override it in the Variables tab only if you know Railway assigned a different one for your plan/region. |
+| `PORT` | `8080` | Railway's own convention: the port its proxy **and healthcheck system** target. Railway does not infer this from the Dockerfile's `EXPOSE`, so it's baked in here as a default. This is the port **nginx** binds; the Spring Boot app itself always listens on `JODCONVERTER_APP_PORT`. Override it in the Variables tab only if you know Railway assigned a different one for your plan/region. |
+| `JODCONVERTER_APP_PORT` | `8088` | Fixed internal port the Spring Boot app listens on, behind nginx. Only change this if `8088` conflicts with something else in a custom setup — Railway never talks to it directly. |
+| `API_KEYS` | *(empty)* | Comma-separated list of API keys allowed to call the conversion API, e.g. `key-team-a,key-team-b`. Leave unset/empty to keep the service open (the default, same behavior as before). See [Securing access](#4-securing-access-recommended). |
+| `NGINX_CLIENT_MAX_BODY_SIZE` | `25m` | Max request body size accepted by nginx. Should stay at or above `SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE`, or large uploads get rejected by nginx before reaching Spring Boot. |
 | `JODCONVERTER_LOCAL_PORT_NUMBERS` | `2002,2003` | List of internal LibreOffice ports = number of parallel conversion instances |
 | `JODCONVERTER_LOCAL_WORKING_DIR` | `/tmp` | Temporary working directory for conversions |
 | `SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE` | `20MB` | Max size of an uploaded file |
@@ -145,19 +160,48 @@ rebuilding the image, by setting it as a service variable in Railway's
 
 ## 4. Securing access (recommended)
 
-The official image ships with **no authentication** on the conversion
-endpoint: anyone who knows the public URL can send documents to be
-converted. Two simple options depending on your use case:
+By default, the conversion endpoint has **no authentication**: anyone who
+knows the public URL can send documents to be converted. This template now
+ships an optional API-key gate (an `nginx` reverse proxy in front of the
+Spring Boot app, wired up in `railway-entrypoint.sh` /
+`docker/nginx.conf.template`) to close that gap without extra
+infrastructure:
+
+- Set the `API_KEYS` service variable to a comma-separated list of keys,
+  e.g. `API_KEYS=key-for-team-a,key-for-team-b`.
+- Callers must then send one of those keys on every request, either as a
+  header or as a query parameter:
+
+  ```bash
+  curl -F "data=@sample.docx" \
+    -H "X-Api-Key: key-for-team-a" \
+    https://<your-service>.up.railway.app/lool/convert-to/pdf -o sample.pdf
+
+  # or, equivalently:
+  curl -F "data=@sample.docx" \
+    "https://<your-service>.up.railway.app/lool/convert-to/pdf?apiKey=key-for-team-a" \
+    -o sample.pdf
+  ```
+
+- A request with a missing or invalid key gets `401 Unauthorized`.
+- `GET /swagger-ui/*` and `GET /v3/api-docs` always stay reachable without a
+  key — they're just documentation, and this is also what lets Railway's
+  own healthcheck (`GET /swagger-ui/index.html`) keep working no matter
+  how `API_KEYS` is set.
+- Leaving `API_KEYS` unset (the default) keeps the service open, exactly
+  as before — this is an opt-in feature, not a breaking change.
+
+This is a lightweight allowlist, not a full auth system (no per-key rate
+limiting, expiry or scoping) — treat each key as a shared secret and rotate
+it by updating the `API_KEYS` variable. Combine with either of these for
+extra defense in depth:
 
 - **Internal use only**: disable *Public Networking* and keep the service
   reachable only over Railway's private network
   (`<service>.railway.internal`) from other services in the same project.
-- **Public use**: put the service behind a gateway that checks an API key
-  before relaying the request (e.g. a small separate Railway service based
-  on Caddy/nginx requiring an `Authorization` header, or a function in your
-  application backend that proxies to this service over Railway's private
-  network instead of exposing it directly). This is deliberately left out
-  of this template to keep it simple and easy to evolve.
+- **Public use**: additionally put the service behind your own API
+  gateway or application backend if you need per-caller rate limiting,
+  usage tracking, or key rotation without redeploying.
 
 ## 5. Turning this project into a reusable Railway Template
 
@@ -211,6 +255,10 @@ from step 2.
 - **500 on a specific format**: check that LibreOffice actually supports
   that format pair (see the LibreOffice filter list); not every pair is
   natively supported.
+- **401 Unauthorized**: `API_KEYS` is set on the service, and the request
+  didn't include a matching key. Add `-H "X-Api-Key: <one-of-the-keys>"`
+  (or `?apiKey=<one-of-the-keys>` on the URL). `GET /swagger-ui/*` and
+  `/v3/api-docs` never require a key.
 
 ## References
 
